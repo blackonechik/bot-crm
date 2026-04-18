@@ -1,0 +1,327 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Channel {
+  TELEGRAM
+  MAX
+}
+
+enum ChatMode {
+  AUTO
+  MANUAL
+  MIXED
+  CLOSED
+}
+
+enum ChatStatus {
+  NEW
+  BOT_IN_PROGRESS
+  WAITING_MANAGER
+  ASSIGNED
+  MANAGER_IN_PROGRESS
+  WAITING_CLIENT
+  COMPLETED
+  ARCHIVED
+  SPAM
+  APPOINTMENT
+  WAITING_CONFIRMATION
+  CONFIRMED
+  RESCHEDULED
+  CANCELLED
+}
+
+enum LeadStatus {
+  NEW
+  QUALIFICATION
+  IN_PROGRESS
+  CONSULTATION_SCHEDULED
+  PROPOSAL_SENT
+  SUCCESSFUL
+  LOST
+  NOT_TARGET
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+  INTERNAL
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String
+  passwordHash  String
+  isActive      Boolean        @default(true)
+  roleId        String
+  role          Role           @relation(fields: [roleId], references: [id])
+  chats         Chat[]         @relation("AssignedChats")
+  leads         Lead[]         @relation("AssignedLeads")
+  auditLogs     AuditLog[]
+  refreshTokens RefreshToken[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?
+  users       User[]
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model Client {
+  id              String   @id @default(cuid())
+  fullName        String?
+  phone           String?
+  email           String?
+  username        String?
+  city            String?
+  company         String?
+  source          String?
+  dateOfBirth     DateTime?
+  gender          String?
+  externalTgId    String?  @unique
+  externalMaxId   String?  @unique
+  consentAccepted Boolean  @default(false)
+  tags            String[] @default([])
+  chats           Chat[]
+  leads           Lead[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Chat {
+  id               String            @id @default(cuid())
+  channel          Channel
+  externalChatId   String
+  mode             ChatMode          @default(AUTO)
+  status           ChatStatus        @default(NEW)
+  priority         String            @default("medium")
+  isUrgent         Boolean           @default(false)
+  clientId         String
+  assignedUserId   String?
+  firstResponseAt  DateTime?
+  closedAt         DateTime?
+  client           Client            @relation(fields: [clientId], references: [id])
+  assignedUser     User?             @relation("AssignedChats", fields: [assignedUserId], references: [id])
+  messages         Message[]
+  lead             Lead?
+  statusHistory    ChatStatusHistory[]
+  internalNotes    InternalNote[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([channel, externalChatId])
+}
+
+model ChatStatusHistory {
+  id         String     @id @default(cuid())
+  chatId      String
+  fromStatus  ChatStatus?
+  toStatus    ChatStatus
+  changedById String?
+  reason      String?
+  chat        Chat       @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  changedBy   User?      @relation(fields: [changedById], references: [id])
+  createdAt   DateTime   @default(now())
+}
+
+model Message {
+  id            String           @id @default(cuid())
+  chatId         String
+  direction      MessageDirection
+  text           String
+  channelMessageId String?
+  senderClientId String?
+  senderUserId   String?
+  metadata       Json?
+  chat           Chat             @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  senderClient   Client?          @relation(fields: [senderClientId], references: [id])
+  senderUser     User?            @relation(fields: [senderUserId], references: [id])
+  createdAt      DateTime         @default(now())
+
+  @@index([chatId, createdAt])
+}
+
+model InternalNote {
+  id        String   @id @default(cuid())
+  chatId     String
+  authorId   String
+  content    String
+  chat       Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  author     User     @relation(fields: [authorId], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+model Lead {
+  id              String       @id @default(cuid())
+  source          String?
+  channel         Channel
+  fullName        String?
+  phone           String?
+  email           String?
+  username        String?
+  company         String?
+  comment         String?
+  interest        String?
+  status          LeadStatus   @default(NEW)
+  tags            String[]     @default([])
+  clientId        String
+  chatId          String       @unique
+  assignedUserId  String?
+  client          Client       @relation(fields: [clientId], references: [id])
+  chat            Chat         @relation(fields: [chatId], references: [id])
+  assignedUser    User?        @relation("AssignedLeads", fields: [assignedUserId], references: [id])
+  statusHistory   LeadStatusHistory[]
+  comments        LeadComment[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model LeadStatusHistory {
+  id         String     @id @default(cuid())
+  leadId      String
+  fromStatus  LeadStatus?
+  toStatus    LeadStatus
+  changedById String?
+  reason      String?
+  lead        Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  changedBy   User?      @relation(fields: [changedById], references: [id])
+  createdAt   DateTime   @default(now())
+}
+
+model LeadComment {
+  id        String   @id @default(cuid())
+  leadId     String
+  authorId   String
+  content    String
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  author     User     @relation(fields: [authorId], references: [id])
+  createdAt  DateTime @default(now())
+}
+
+model FaqCategory {
+  id        String    @id @default(cuid())
+  title     String
+  items     FaqItem[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model FaqItem {
+  id          String      @id @default(cuid())
+  categoryId  String?
+  question    String
+  aliases     String[]    @default([])
+  answer      String
+  keywords    String[]    @default([])
+  isActive    Boolean     @default(true)
+  usageCount  Int         @default(0)
+  category    FaqCategory? @relation(fields: [categoryId], references: [id])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model QuizForm {
+  id          String         @id @default(cuid())
+  title       String
+  description String?
+  isActive    Boolean        @default(true)
+  questions   QuizQuestion[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model QuizQuestion {
+  id         String   @id @default(cuid())
+  formId      String
+  text        String
+  type        String
+  isRequired  Boolean  @default(false)
+  options     String[] @default([])
+  order       Int
+  form        QuizForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model IntegrationSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  isEnabled   Boolean  @default(false)
+  payload     Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model WebhookLog {
+  id         String   @id @default(cuid())
+  channel    Channel
+  eventType  String
+  payload    Json
+  status     String
+  error      String?
+  createdAt  DateTime @default(now())
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String?
+  title       String
+  body        String
+  type        String
+  isRead      Boolean  @default(false)
+  payload     Json?
+  createdAt   DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId      String?
+  action      String
+  entity      String
+  entityId    String?
+  payload     Json?
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+  user        User?    @relation(fields: [userId], references: [id])
+}
+
+model RefreshToken {
+  id          String   @id @default(cuid())
+  token       String   @unique
+  userId      String
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+}
