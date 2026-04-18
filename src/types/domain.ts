@@ -1,0 +1,67 @@
+export enum Channel {
+  TELEGRAM = 'TELEGRAM',
+  MAX = 'MAX'
+}
+
+export enum ChatMode {
+  AUTO = 'AUTO',
+  MANUAL = 'MANUAL',
+  MIXED = 'MIXED',
+  CLOSED = 'CLOSED'
+}
+
+export enum ChatStatus {
+  NEW = 'NEW',
+  BOT_IN_PROGRESS = 'BOT_IN_PROGRESS',
+  WAITING_MANAGER = 'WAITING_MANAGER',
+  ASSIGNED = 'ASSIGNED',
+  MANAGER_IN_PROGRESS = 'MANAGER_IN_PROGRESS',
+  WAITING_CLIENT = 'WAITING_CLIENT',
+  COMPLETED = 'COMPLETED',
+  ARCHIVED = 'ARCHIVED',
+  SPAM = 'SPAM',
+  APPOINTMENT = 'APPOINTMENT',
+  WAITING_CONFIRMATION = 'WAITING_CONFIRMATION',
+  CONFIRMED = 'CONFIRMED',
+  RESCHEDULED = 'RESCHEDULED',
+  CANCELLED = 'CANCELLED'
+}
+
+export enum LeadStatus {
+  NEW = 'NEW',
+  QUALIFICATION = 'QUALIFICATION',
+  IN_PROGRESS = 'IN_PROGRESS',
+  CONSULTATION_SCHEDULED = 'CONSULTATION_SCHEDULED',
+  PROPOSAL_SENT = 'PROPOSAL_SENT',
+  SUCCESSFUL = 'SUCCESSFUL',
+  LOST = 'LOST',
+  NOT_TARGET = 'NOT_TARGET'
+}
+
+export enum MessageDirection {
+  INBOUND = 'INBOUND',
+  OUTBOUND = 'OUTBOUND',
+  INTERNAL = 'INTERNAL'
+}
+
+export enum AppointmentStatus {
+  REQUESTED = 'REQUESTED',
+  WAITING_CONFIRMATION = 'WAITING_CONFIRMATION',
+  CONFIRMED = 'CONFIRMED',
+  RESCHEDULED = 'RESCHEDULED',
+  CANCELLED = 'CANCELLED',
+  COMPLETED = 'COMPLETED'
+}
+
+export enum ConversationState {
+  NEW = 'new',
+  MAIN_MENU = 'main_menu',
+  FAQ_FLOW = 'faq_flow',
+  APPOINTMENT_FLOW = 'appointment_flow',
+  DOCTOR_SELECTION_FLOW = 'doctor_selection_flow',
+  PRICE_FLOW = 'price_flow',
+  CONTACT_COLLECTION_FLOW = 'contact_collection_flow',
+  HUMAN_HANDOFF_WAITING = 'human_handoff_waiting',
+  HUMAN_MODE = 'human_mode',
+  CLOSED = 'closed'
+}

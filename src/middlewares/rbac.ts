@@ -1,4 +1,4 @@
-import { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 
 export function requirePermission(permission: string) {
   return (req: Request, res: Response, next: NextFunction): void => {

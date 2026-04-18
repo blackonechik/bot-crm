@@ -1,6 +1,6 @@
 import { Telegraf } from 'telegraf';
 import { env } from '../config/env';
-import { Channel } from '@prisma/client';
+import { Channel } from '../types/domain';
 import { processInboundMessage } from './message-router.service';
 
 let bot: Telegraf | null = null;

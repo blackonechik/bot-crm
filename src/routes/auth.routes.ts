@@ -74,7 +74,7 @@ router.post('/login', async (req, res, next) => {
       return;
     }
 
-    const permissions = user.role.permissions.map((p) => p.permission.code);
+    const permissions = user.role.permissions.map((p: { permission: { code: string } }) => p.permission.code);
     const accessToken = signAccessToken({ sub: user.id, role: user.role.name, permissions });
     const refreshToken = signRefreshToken(user.id);
 
@@ -130,7 +130,7 @@ router.post('/refresh', async (req, res, next) => {
       return;
     }
 
-    const permissions = user.role.permissions.map((p) => p.permission.code);
+    const permissions = user.role.permissions.map((p: { permission: { code: string } }) => p.permission.code);
     const accessToken = signAccessToken({ sub: user.id, role: user.role.name, permissions });
 
     res.json({ accessToken });
@@ -173,7 +173,7 @@ router.get('/me', requireAuth, async (req, res, next) => {
       email: user.email,
       name: user.name,
       role: user.role.name,
-      permissions: user.role.permissions.map((p) => p.permission.code)
+      permissions: user.role.permissions.map((p: { permission: { code: string } }) => p.permission.code)
     });
   } catch (e) {
     next(e);

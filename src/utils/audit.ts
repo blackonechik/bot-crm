@@ -1,4 +1,4 @@
-import { Request } from 'express';
+import type { Request } from 'express';
 import { prisma } from '../db/prisma';
 
 type Params = {
@@ -22,6 +22,16 @@ export async function writeAuditLog(params: Params): Promise<void> {
       payload: payload as object | undefined,
       ip: req?.ip,
       userAgent: req?.headers['user-agent']
+    }
+  });
+
+  await prisma.eventLog.create({
+    data: {
+      userId: userId ?? req?.auth?.userId,
+      type: action,
+      entity,
+      entityId,
+      payload: payload as object | undefined
     }
   });
 }

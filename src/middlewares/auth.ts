@@ -1,4 +1,4 @@
-import { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { prisma } from '../db/prisma';
 import { verifyAccessToken } from '../utils/jwt';
 
@@ -27,7 +27,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.auth = {
       userId: user.id,
       role: { id: user.role.id, name: user.role.name },
-      permissions: user.role.permissions.map((p) => p.permission.code)
+      permissions: user.role.permissions.map((p: { permission: { code: string } }) => p.permission.code)
     };
 
     next();

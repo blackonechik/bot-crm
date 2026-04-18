@@ -19,6 +19,15 @@ const PERMISSIONS = [
   'faq.write',
   'quiz.read',
   'quiz.write',
+  'scenarios.read',
+  'scenarios.write',
+  'appointments.read',
+  'appointments.write',
+  'settings.read',
+  'settings.write',
+  'notifications.read',
+  'notifications.write',
+  'events.read',
   'analytics.read',
   'integrations.read',
   'integrations.write',
@@ -37,6 +46,10 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
     'messages.send',
     'leads.read',
     'leads.write',
+    'appointments.read',
+    'appointments.write',
+    'settings.read',
+    'settings.write',
     'analytics.read'
   ],
   operator: [
@@ -46,10 +59,12 @@ const ROLE_PERMISSION_MAP: Record<string, string[]> = {
     'chats.write',
     'messages.send',
     'leads.read',
-    'leads.write'
+    'leads.write',
+    'appointments.read',
+    'notifications.read'
   ],
-  content_manager: ['faq.read', 'faq.write', 'quiz.read', 'quiz.write'],
-  analyst: ['analytics.read', 'audit.read', 'chats.read', 'leads.read']
+  content_manager: ['faq.read', 'faq.write', 'quiz.read', 'quiz.write', 'scenarios.read', 'scenarios.write'],
+  analyst: ['analytics.read', 'audit.read', 'events.read', 'chats.read', 'leads.read']
 };
 
 async function main() {
@@ -103,6 +118,46 @@ async function main() {
       name: 'System Admin',
       passwordHash,
       roleId: superadminRole.id
+    }
+  });
+
+  await prisma.clinicProfile.upsert({
+    where: { id: 'default-clinic-profile' },
+    update: {},
+    create: {
+      id: 'default-clinic-profile',
+      name: 'Клиника',
+      address: 'Не задано',
+      phone: '+7 (000) 000-00-00',
+      site: 'https://example.com',
+      welcomeText: 'Здравствуйте! Добро пожаловать в клинику.',
+      mainMenuText: 'Чем я могу помочь?',
+      fallbackText: 'Я не совсем понял запрос. Выберите, пожалуйста, один из вариантов меню.',
+      afterHoursText: 'Вы обратились вне рабочего времени клиники.',
+      urgentText: 'Понимаю, что ситуация может быть срочной. Рекомендуем немедленно обратиться за экстренной помощью.',
+      handoffText: 'Я передал ваш запрос администратору. Пожалуйста, ожидайте ответа.',
+      disclaimerText: 'Информация, предоставляемая ботом, носит справочный характер и не заменяет консультацию врача.',
+      triggerWords: ['срочно', 'сильная боль', 'кровь', 'плохо', 'экстренно'],
+      workingHours: {
+        mon: '09:00-18:00',
+        tue: '09:00-18:00',
+        wed: '09:00-18:00',
+        thu: '09:00-18:00',
+        fri: '09:00-18:00',
+        sat: '09:00-15:00',
+        sun: 'closed'
+      },
+      appointmentButtons: ['Записаться на прием', 'Узнать стоимость', 'Выбрать врача', 'График и адрес', 'Связаться с администратором'],
+      doctors: [
+        { id: 'd1', name: 'Иванов И.И.', specialization: 'Терапевт', experience: '10 лет' },
+        { id: 'd2', name: 'Петрова А.С.', specialization: 'Гинеколог', experience: '8 лет' }
+      ],
+      services: [
+        { name: 'Прием терапевта', price: 'от 1500 ₽' },
+        { name: 'Прием кардиолога', price: 'от 2500 ₽' },
+        { name: 'Стоматология', price: 'от 3000 ₽' },
+        { name: 'Анализы', price: 'от 500 ₽' }
+      ]
     }
   });
 }

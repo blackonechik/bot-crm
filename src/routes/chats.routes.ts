@@ -1,9 +1,10 @@
-import { ChatMode, ChatStatus, MessageDirection } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requireAuth } from '../middlewares/auth';
 import { requirePermission } from '../middlewares/rbac';
+import { ChatMode, ChatStatus, MessageDirection } from '../types/domain';
 
 const router = Router();
 router.use(requireAuth);
@@ -17,7 +18,7 @@ router.get('/', requirePermission('chats.read'), async (req, res, next) => {
     const chats = await prisma.chat.findMany({
       where: {
         status: status as ChatStatus | undefined,
-        channel: channel as any,
+        channel: channel as 'TELEGRAM' | 'MAX' | undefined,
         assignedUserId
       },
       include: {
@@ -68,7 +69,7 @@ router.post('/:id/messages', requirePermission('messages.send'), async (req, res
       data: {
         chatId: req.params.id,
         text: data.text,
-        direction: MessageDirection.OUTBOUND,
+        direction: MessageDirection.OUTBOUND as any,
         senderUserId: req.auth!.userId
       }
     });
@@ -116,7 +117,7 @@ router.patch('/:id/status', requirePermission('chats.write'), async (req, res, n
     const updated = await prisma.chat.update({
       where: { id: req.params.id },
       data: {
-        status,
+        status: status as any,
         closedAt: status === ChatStatus.COMPLETED ? new Date() : null
       }
     });
@@ -144,7 +145,43 @@ router.patch('/:id/mode', requirePermission('chats.write'), async (req, res, nex
 
     const updated = await prisma.chat.update({
       where: { id: req.params.id },
-      data: { mode }
+      data: { mode: mode as any }
+    });
+
+    res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.patch('/:id/state', requirePermission('chats.write'), async (req, res, next) => {
+  try {
+    const schema = z.object({
+      conversationState: z.string().optional(),
+      currentScenarioCode: z.string().nullable().optional(),
+      currentScenarioStep: z.string().nullable().optional(),
+      scenarioData: z.unknown().nullable().optional(),
+      sourceTransition: z.string().nullable().optional(),
+      failedIntentCount: z.number().int().nonnegative().optional(),
+      priority: z.string().optional(),
+      status: z.nativeEnum(ChatStatus).optional()
+    });
+
+    const data = schema.parse(req.body);
+    const updated = await prisma.chat.update({
+      where: { id: req.params.id },
+      data: {
+        ...(data.conversationState !== undefined ? { conversationState: data.conversationState } : {}),
+        ...(data.currentScenarioCode !== undefined ? { currentScenarioCode: data.currentScenarioCode } : {}),
+        ...(data.currentScenarioStep !== undefined ? { currentScenarioStep: data.currentScenarioStep } : {}),
+        ...(data.scenarioData !== undefined
+          ? { scenarioData: data.scenarioData === null ? Prisma.JsonNull : (data.scenarioData as Prisma.InputJsonValue) }
+          : {}),
+        ...(data.sourceTransition !== undefined ? { sourceTransition: data.sourceTransition } : {}),
+        ...(data.failedIntentCount !== undefined ? { failedIntentCount: data.failedIntentCount } : {}),
+        ...(data.priority !== undefined ? { priority: data.priority } : {}),
+        ...(data.status !== undefined ? { status: data.status as any } : {})
+      }
     });
 
     res.json(updated);
@@ -162,7 +199,7 @@ router.patch('/:id/assign', requirePermission('chats.write'), async (req, res, n
       where: { id: req.params.id },
       data: {
         assignedUserId: data.assignedUserId,
-        status: data.assignedUserId ? ChatStatus.ASSIGNED : ChatStatus.WAITING_MANAGER
+        status: (data.assignedUserId ? ChatStatus.ASSIGNED : ChatStatus.WAITING_MANAGER) as any
       }
     });
 

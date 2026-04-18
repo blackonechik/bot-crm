@@ -53,6 +53,15 @@ enum MessageDirection {
   INTERNAL
 }
 
+enum AppointmentStatus {
+  REQUESTED
+  WAITING_CONFIRMATION
+  CONFIRMED
+  RESCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
 model User {
   id            String         @id @default(cuid())
   email         String         @unique
@@ -63,7 +72,14 @@ model User {
   role          Role           @relation(fields: [roleId], references: [id])
   chats         Chat[]         @relation("AssignedChats")
   leads         Lead[]         @relation("AssignedLeads")
+  sentMessages  Message[]      @relation("UserSentMessages")
+  internalNotes InternalNote[] @relation("UserInternalNotes")
+  leadComments  LeadComment[]  @relation("UserLeadComments")
+  chatStatusChanges ChatStatusHistory[] @relation("UserChatStatusChanges")
+  leadStatusChanges LeadStatusHistory[] @relation("UserLeadStatusChanges")
+  appointments  Appointment[]  @relation("UserAppointments")
   auditLogs     AuditLog[]
+  eventLogs     EventLog[]
   refreshTokens RefreshToken[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -114,6 +130,9 @@ model Client {
   tags            String[] @default([])
   chats           Chat[]
   leads           Lead[]
+  appointments    Appointment[]
+  quizAnswers     QuizAnswer[]
+  messages        Message[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
@@ -124,8 +143,18 @@ model Chat {
   externalChatId   String
   mode             ChatMode          @default(AUTO)
   status           ChatStatus        @default(NEW)
+  conversationState String            @default("new")
+  currentScenarioCode String?
+  currentScenarioStep String?
+  scenarioData     Json?
+  sourceTransition  String?
+  failedIntentCount Int               @default(0)
   priority         String            @default("medium")
   isUrgent         Boolean           @default(false)
+  tags             String[]          @default([])
+  lastUserMessageAt DateTime?
+  lastBotMessageAt  DateTime?
+  pausedAt          DateTime?
   clientId         String
   assignedUserId   String?
   firstResponseAt  DateTime?
@@ -134,6 +163,8 @@ model Chat {
   assignedUser     User?             @relation("AssignedChats", fields: [assignedUserId], references: [id])
   messages         Message[]
   lead             Lead?
+  quizAnswers     QuizAnswer[]
+  appointments    Appointment[]
   statusHistory    ChatStatusHistory[]
   internalNotes    InternalNote[]
   createdAt        DateTime          @default(now())
@@ -150,7 +181,7 @@ model ChatStatusHistory {
   changedById String?
   reason      String?
   chat        Chat       @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  changedBy   User?      @relation(fields: [changedById], references: [id])
+  changedBy   User?      @relation("UserChatStatusChanges", fields: [changedById], references: [id])
   createdAt   DateTime   @default(now())
 }
 
@@ -165,7 +196,8 @@ model Message {
   metadata       Json?
   chat           Chat             @relation(fields: [chatId], references: [id], onDelete: Cascade)
   senderClient   Client?          @relation(fields: [senderClientId], references: [id])
-  senderUser     User?            @relation(fields: [senderUserId], references: [id])
+  senderUser     User?            @relation("UserSentMessages", fields: [senderUserId], references: [id])
+  attachments    MessageAttachment[]
   createdAt      DateTime         @default(now())
 
   @@index([chatId, createdAt])
@@ -177,8 +209,20 @@ model InternalNote {
   authorId   String
   content    String
   chat       Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  author     User     @relation(fields: [authorId], references: [id])
+  author     User     @relation("UserInternalNotes", fields: [authorId], references: [id])
   createdAt  DateTime @default(now())
+}
+
+model MessageAttachment {
+  id        String   @id @default(cuid())
+  messageId String
+  fileName  String?
+  mimeType  String?
+  url       String?
+  size      Int?
+  metadata  Json?
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 }
 
 model Lead {
@@ -202,6 +246,8 @@ model Lead {
   assignedUser    User?        @relation("AssignedLeads", fields: [assignedUserId], references: [id])
   statusHistory   LeadStatusHistory[]
   comments        LeadComment[]
+  quizAnswers     QuizAnswer[]
+  appointments    Appointment[]
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 }
@@ -214,7 +260,7 @@ model LeadStatusHistory {
   changedById String?
   reason      String?
   lead        Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  changedBy   User?      @relation(fields: [changedById], references: [id])
+  changedBy   User?      @relation("UserLeadStatusChanges", fields: [changedById], references: [id])
   createdAt   DateTime   @default(now())
 }
 
@@ -224,7 +270,7 @@ model LeadComment {
   authorId   String
   content    String
   lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  author     User     @relation(fields: [authorId], references: [id])
+  author     User     @relation("UserLeadComments", fields: [authorId], references: [id])
   createdAt  DateTime @default(now())
 }
 
@@ -256,6 +302,7 @@ model QuizForm {
   description String?
   isActive    Boolean        @default(true)
   questions   QuizQuestion[]
+  answers     QuizAnswer[]
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 }
@@ -273,11 +320,115 @@ model QuizQuestion {
   updatedAt   DateTime @updatedAt
 }
 
+model QuizAnswer {
+  id          String   @id @default(cuid())
+  formId      String
+  clientId    String?
+  chatId      String?
+  leadId      String?
+  answers     Json
+  form        QuizForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  client      Client?  @relation(fields: [clientId], references: [id])
+  chat        Chat?    @relation(fields: [chatId], references: [id])
+  lead        Lead?    @relation(fields: [leadId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model BotScenario {
+  id          String          @id @default(cuid())
+  code        String          @unique
+  title       String
+  description String?
+  isActive    Boolean         @default(true)
+  triggerPhrases Json?
+  validationRules Json?
+  transferRules Json?
+  fallbackText String?
+  steps       ScenarioStep[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model ScenarioStep {
+  id          String      @id @default(cuid())
+  scenarioId  String
+  type        String
+  title       String
+  payload     Json?
+  order       Int
+  scenario    BotScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Appointment {
+  id             String            @id @default(cuid())
+  clientId       String?
+  chatId         String?
+  leadId         String?
+  assignedUserId String?
+  service        String
+  doctor         String?
+  scheduledAt    DateTime
+  status         AppointmentStatus @default(REQUESTED)
+  comment        String?
+  client         Client?           @relation(fields: [clientId], references: [id])
+  chat           Chat?             @relation(fields: [chatId], references: [id])
+  lead           Lead?             @relation(fields: [leadId], references: [id])
+  assignedUser   User?             @relation("UserAppointments", fields: [assignedUserId], references: [id])
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+model ClinicProfile {
+  id                  String   @id @default(cuid())
+  name                String
+  address             String?
+  phone               String?
+  site                String?
+  workingHours        Json?
+  welcomeText         String?
+  mainMenuText        String?
+  fallbackText        String?
+  afterHoursText      String?
+  urgentText          String?
+  handoffText         String?
+  disclaimerText      String?
+  appointmentButtons  Json?
+  doctors             Json?
+  services            Json?
+  triggerWords        Json?
+  updatedAt           DateTime @updatedAt
+  createdAt           DateTime @default(now())
+}
+
 model IntegrationSetting {
   id          String   @id @default(cuid())
   key         String   @unique
   isEnabled   Boolean  @default(false)
   payload     Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model EventLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  type      String
+  entity    String?
+  entityId  String?
+  payload   Json?
+  user      User?    @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model ScheduledTask {
+  id          String   @id @default(cuid())
+  type        String
+  runAt       DateTime
+  payload     Json?
+  isProcessed Boolean  @default(false)
+  error       String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

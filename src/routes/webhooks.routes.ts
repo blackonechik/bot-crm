@@ -1,7 +1,7 @@
-import { Channel } from '@prisma/client';
 import { Router } from 'express';
 import { prisma } from '../db/prisma';
 import { processInboundMessage } from '../services/message-router.service';
+import { Channel } from '../types/domain';
 
 const router = Router();
 

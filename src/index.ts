@@ -2,6 +2,7 @@ import { app } from './app';
 import { env } from './config/env';
 import { prisma } from './db/prisma';
 import { startMaxBot, stopMaxBot } from './services/max-bot.service';
+import { processDueScheduledTasks } from './services/scheduled-tasks.service';
 import { startTelegramBot, stopTelegramBot } from './services/telegram-bot.service';
 
 async function bootstrap(): Promise<void> {
@@ -13,6 +14,9 @@ async function bootstrap(): Promise<void> {
     // Optional bot runtimes (long polling). Can coexist with webhook endpoints.
     await startTelegramBot();
     await startMaxBot();
+    setInterval(() => {
+      processDueScheduledTasks().catch((error) => console.error('Scheduled task processing failed', error));
+    }, 60_000).unref();
   });
 
   const shutdown = async () => {

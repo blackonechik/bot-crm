@@ -1,9 +1,9 @@
-import { LeadStatus } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requireAuth } from '../middlewares/auth';
 import { requirePermission } from '../middlewares/rbac';
+import { LeadStatus } from '../types/domain';
 
 const router = Router();
 router.use(requireAuth);
@@ -15,7 +15,7 @@ router.get('/', requirePermission('leads.read'), async (req, res, next) => {
     const leads = await prisma.lead.findMany({
       where: {
         status,
-        channel: req.query.channel ? (String(req.query.channel) as any) : undefined
+        channel: req.query.channel ? (String(req.query.channel) as 'TELEGRAM' | 'MAX') : undefined
       },
       include: {
         client: true,
@@ -118,6 +118,47 @@ router.post('/:id/comments', requirePermission('leads.write'), async (req, res, 
     });
 
     res.status(201).json(comment);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/export/csv', requirePermission('leads.read'), async (_req, res, next) => {
+  try {
+    const leads = await prisma.lead.findMany({
+      include: { client: true, assignedUser: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const escape = (value: unknown) => {
+      const text = value == null ? '' : String(value);
+      return `"${text.replaceAll('"', '""')}"`;
+    };
+
+    const rows = [
+      ['id', 'createdAt', 'source', 'channel', 'name', 'phone', 'email', 'username', 'company', 'comment', 'interest', 'status', 'assignedUser'].join(','),
+      ...leads.map((lead) =>
+        [
+          lead.id,
+          lead.createdAt.toISOString(),
+          lead.source ?? '',
+          lead.channel,
+          lead.fullName ?? '',
+          lead.phone ?? '',
+          lead.email ?? '',
+          lead.username ?? '',
+          lead.company ?? '',
+          lead.comment ?? '',
+          lead.interest ?? '',
+          lead.status,
+          lead.assignedUser?.name ?? ''
+        ].map(escape).join(',')
+      )
+    ].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="leads.csv"');
+    res.send(rows);
   } catch (e) {
     next(e);
   }

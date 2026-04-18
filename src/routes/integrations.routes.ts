@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../db/prisma';
@@ -24,12 +25,17 @@ router.put('/:key', requirePermission('integrations.write'), async (req, res, ne
     });
 
     const data = schema.parse(req.body);
+    const payload = data.payload as Prisma.InputJsonValue | undefined;
     const updated = await prisma.integrationSetting.upsert({
       where: { key: req.params.key },
-      update: data,
+      update: {
+        isEnabled: data.isEnabled,
+        ...(data.payload !== undefined ? { payload } : {})
+      },
       create: {
         key: req.params.key,
-        ...data
+        isEnabled: data.isEnabled,
+        ...(data.payload !== undefined ? { payload } : {})
       }
     });
 

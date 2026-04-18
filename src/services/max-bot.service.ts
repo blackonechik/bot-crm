@@ -1,5 +1,5 @@
 import { env } from '../config/env';
-import { Channel } from '@prisma/client';
+import { Channel } from '../types/domain';
 import { processInboundMessage } from './message-router.service';
 
 let botInstance: any = null;

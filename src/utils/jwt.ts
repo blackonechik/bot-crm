@@ -8,11 +8,11 @@ export type AccessPayload = {
 };
 
 export function signAccessToken(payload: AccessPayload): string {
-  return jwt.sign(payload, env.accessSecret, { expiresIn: env.accessTtl });
+  return jwt.sign(payload, env.accessSecret, { expiresIn: env.accessTtl as jwt.SignOptions['expiresIn'] });
 }
 
 export function signRefreshToken(userId: string): string {
-  return jwt.sign({ sub: userId }, env.refreshSecret, { expiresIn: env.refreshTtl });
+  return jwt.sign({ sub: userId }, env.refreshSecret, { expiresIn: env.refreshTtl as jwt.SignOptions['expiresIn'] });
 }
 
 export function verifyAccessToken(token: string): AccessPayload {
