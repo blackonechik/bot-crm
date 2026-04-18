@@ -14,9 +14,6 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "db:setup": "prisma migrate deploy && npm run prisma:seed"
   },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
-  },
   "dependencies": {
     "@maxhub/max-bot-api": "0.2.2",
     "@prisma/client": "^6.8.0",

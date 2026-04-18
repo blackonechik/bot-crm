@@ -99,8 +99,13 @@ export async function startMaxBot(): Promise<void> {
     }
   });
 
-  bot.start();
-  console.log('MAX bot started (@maxhub/max-bot-api)');
+  try {
+    bot.start();
+    console.log('MAX bot started (@maxhub/max-bot-api)');
+  } catch (error) {
+    console.warn('MAX bot failed to start, continuing without polling', error);
+    maxBot = null;
+  }
 }
 
 export async function stopMaxBot(): Promise<void> {

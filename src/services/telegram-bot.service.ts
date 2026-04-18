@@ -91,8 +91,13 @@ export async function startTelegramBot(): Promise<void> {
     }
   });
 
-  await telegramBot.launch();
-  console.log('Telegram bot started (Telegraf)');
+  try {
+    await telegramBot.launch();
+    console.log('Telegram bot started (Telegraf)');
+  } catch (error) {
+    console.warn('Telegram bot failed to start, continuing without polling', error);
+    telegramBot = null;
+  }
 }
 
 export async function stopTelegramBot(): Promise<void> {

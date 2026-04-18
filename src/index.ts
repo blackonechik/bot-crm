@@ -12,8 +12,12 @@ async function bootstrap(): Promise<void> {
     console.log(`Backend started on http://localhost:${env.port}`);
 
     // Optional bot runtimes (long polling). Can coexist with webhook endpoints.
-    await startTelegramBot();
-    await startMaxBot();
+    void startTelegramBot().catch((error) => {
+      console.warn('Telegram bot bootstrap failed', error);
+    });
+    void startMaxBot().catch((error) => {
+      console.warn('MAX bot bootstrap failed', error);
+    });
     setInterval(() => {
       processDueScheduledTasks().catch((error) => console.error('Scheduled task processing failed', error));
     }, 60_000).unref();
