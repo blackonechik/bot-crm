@@ -1,6 +1,8 @@
 import { AppointmentStatus, Prisma } from '@prisma/client';
 import { prisma } from '../db/prisma';
+import { getAvailableAppointmentSlots } from './appointment-slots.service';
 import { Channel, ChatMode, ChatStatus, ConversationState, MessageDirection } from '../types/domain';
+import { publishLiveEvent } from './realtime.service';
 
 type InboundPayload = {
   channel: Channel;
@@ -214,6 +216,11 @@ async function logOutboundMessage(chatId: string, text: string): Promise<void> {
       direction: MessageDirection.OUTBOUND as any
     }
   });
+
+  await prisma.chat.updateMany({
+    where: { id: chatId, firstResponseAt: null },
+    data: { firstResponseAt: new Date() }
+  });
 }
 
 async function updateChatState(
@@ -261,6 +268,15 @@ async function updateChatState(
 
 async function ensureActiveChat(payload: InboundPayload) {
   const { channel, externalUserId, externalChatId, fullName, username } = payload;
+  const existingChat = await prisma.chat.findUnique({
+    where: {
+      channel_externalChatId: {
+        channel,
+        externalChatId
+      }
+    },
+    select: { id: true }
+  });
 
   let client = await prisma.client.findFirst({
     where: channel === Channel.TELEGRAM ? { externalTgId: externalUserId } : { externalMaxId: externalUserId }
@@ -296,6 +312,16 @@ async function ensureActiveChat(payload: InboundPayload) {
       failedIntentCount: 0
     }
   });
+
+  if (!existingChat) {
+    await prisma.scheduledTask.create({
+      data: {
+        type: 'sla_first_response_30m',
+        runAt: new Date(Date.now() + 30 * 60 * 1000),
+        payload: { chatId: chat.id }
+      }
+    });
+  }
 
   return { client, chat };
 }
@@ -396,7 +422,14 @@ async function createAppointmentAndLead(params: {
   data: ScenarioData;
   channel: Channel;
 }): Promise<void> {
-  const scheduledAt = params.data.scheduledAt instanceof Date ? params.data.scheduledAt : new Date(String(params.data.scheduledAt ?? ''));
+  const scheduledAt =
+    params.data.scheduledAt instanceof Date
+      ? params.data.scheduledAt
+      : typeof params.data.scheduledAt === 'string'
+        ? new Date(params.data.scheduledAt)
+        : typeof params.data.date === 'string'
+          ? new Date(params.data.date)
+          : new Date(String(params.data.scheduledAt ?? ''));
 
   const appointment = await prisma.appointment.create({
     data: {
@@ -760,10 +793,11 @@ async function handleAppointmentFlow(
   }
 
   if (state === 'date') {
+    let selectedDate: Date | null = null;
     if (normalized === 'сегодня') {
-      data.date = new Date();
+      selectedDate = new Date();
     } else if (normalized === 'завтра') {
-      data.date = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      selectedDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
     } else {
       const parsed = parseDateCandidate(text);
       if (!parsed) {
@@ -780,8 +814,18 @@ async function handleAppointmentFlow(
           buttons: ['Сегодня', 'Завтра', 'Связаться с администратором', 'В меню']
         };
       }
-      data.date = parsed.toISOString();
+      selectedDate = parsed;
     }
+
+    data.date = selectedDate.toISOString();
+    const availableSlots = await getAvailableAppointmentSlots({
+      profile,
+      from: selectedDate.toISOString(),
+      specialization: typeof data.specialization === 'string' ? data.specialization : undefined,
+      doctorName: typeof data.doctorName === 'string' ? data.doctorName : undefined,
+      limit: 6
+    });
+    data.availableSlots = availableSlots;
 
     await updateChatState(chat.id, {
       currentScenarioStep: 'time',
@@ -790,13 +834,49 @@ async function handleAppointmentFlow(
 
     return {
       chatId: chat.id,
-      text: 'Укажите удобное время.',
-      buttons: ['Утро', 'День', 'Вечер', 'Не важно', 'Связаться с администратором', 'В меню']
+      text: availableSlots.length
+        ? 'Укажите удобное время. Вот ближайшие доступные слоты:'
+        : 'Укажите удобное время. Ближайшие доступные слоты сейчас недоступны, но вы можете ввести удобное время вручную.',
+      buttons: [
+        ...(availableSlots.length ? availableSlots.map((slot) => slot.label) : ['Утро', 'День', 'Вечер', 'Не важно']),
+        'Связаться с администратором',
+        'В меню'
+      ]
     };
   }
 
   if (state === 'time') {
-    data.time = text.trim();
+    const availableSlots = Array.isArray(data.availableSlots)
+      ? (data.availableSlots as Array<{ scheduledAt: string; label: string }>)
+      : [];
+    const pickedSlot = availableSlots.find(
+      (slot) => normalizeText(slot.label) === normalizeText(text) || normalizeText(new Date(slot.scheduledAt).toISOString()) === normalizeText(text)
+    );
+
+    if (pickedSlot) {
+      data.scheduledAt = pickedSlot.scheduledAt;
+      data.time = new Date(pickedSlot.scheduledAt).toTimeString().slice(0, 5);
+    } else if (normalized === 'не важно') {
+      const fallbackSlot = availableSlots[0];
+      if (fallbackSlot) {
+        data.scheduledAt = fallbackSlot.scheduledAt;
+        data.time = new Date(fallbackSlot.scheduledAt).toTimeString().slice(0, 5);
+      } else {
+        data.time = 'не важно';
+      }
+    } else {
+      const timeMatch = normalized.match(/^(\d{1,2})[:.](\d{2})$/);
+      if (timeMatch && data.date) {
+        const [_, hh, mm] = timeMatch;
+        const date = new Date(String(data.date));
+        date.setHours(Number(hh), Number(mm), 0, 0);
+        data.scheduledAt = date.toISOString();
+        data.time = `${hh.padStart(2, '0')}:${mm}`;
+      } else {
+        data.time = text.trim();
+      }
+    }
+
     await updateChatState(chat.id, {
       currentScenarioStep: 'name',
       scenarioData: data
@@ -878,6 +958,41 @@ async function handleAppointmentFlow(
 
   if (state === 'confirm') {
     if (includesAny(normalized, YES_WORDS) || normalized === 'подтвердить') {
+      const scheduledAt = typeof data.scheduledAt === 'string' ? new Date(data.scheduledAt) : data.scheduledAt instanceof Date ? data.scheduledAt : null;
+      if (scheduledAt) {
+        const available = await prisma.appointment.findFirst({
+          where: {
+            scheduledAt,
+            OR: [
+              data.doctorName ? { doctor: String(data.doctorName) } : undefined,
+              data.specialization ? { service: { contains: String(data.specialization), mode: 'insensitive' } } : undefined
+            ].filter(Boolean) as Array<Record<string, unknown>>
+          },
+          select: { id: true }
+        });
+
+        if (available) {
+          const slots = await getAvailableAppointmentSlots({
+            profile,
+            from: scheduledAt.toISOString(),
+            specialization: typeof data.specialization === 'string' ? data.specialization : undefined,
+            doctorName: typeof data.doctorName === 'string' ? data.doctorName : undefined,
+            limit: 4
+          });
+
+          await updateChatState(chat.id, {
+            currentScenarioStep: 'time',
+            scenarioData: { ...data, availableSlots: slots }
+          });
+
+          return {
+            chatId: chat.id,
+            text: 'К сожалению, выбранный слот уже занят. Пожалуйста, выберите другой удобный вариант:',
+            buttons: slots.length ? slots.map((slot) => slot.label) : ['Утро', 'День', 'Вечер', 'Связаться с администратором', 'В меню']
+          };
+        }
+      }
+
       await createAppointmentAndLead({ chatId: chat.id, clientId, profile, data, channel: chat.channel as any });
       await logOutboundMessage(chat.id, 'Спасибо! Ваша заявка на запись принята. Администратор свяжется с вами для подтверждения.');
       await updateChatState(chat.id, {
@@ -1205,6 +1320,7 @@ export async function processInboundMessage(payload: InboundPayload): Promise<Ou
     const menuReply = await handleMainMenuTrigger(chat.id, profile);
     await logOutboundMessage(chat.id, menuReply.text);
     await updateChatState(chat.id, { lastBotMessageAt: new Date() });
+    publishLiveEvent({ type: 'workspace:update', chatId: chat.id, entity: 'chat', timestamp: new Date().toISOString() });
     return menuReply;
   }
 
@@ -1228,6 +1344,7 @@ export async function processInboundMessage(payload: InboundPayload): Promise<Ou
   if (activeFlowReply) {
     await logOutboundMessage(chat.id, activeFlowReply.text);
     await updateChatState(chat.id, { lastBotMessageAt: new Date() });
+    publishLiveEvent({ type: 'workspace:update', chatId: chat.id, entity: 'chat', timestamp: new Date().toISOString() });
     return activeFlowReply;
   }
 
@@ -1235,11 +1352,13 @@ export async function processInboundMessage(payload: InboundPayload): Promise<Ou
   if (intentReply) {
     await logOutboundMessage(chat.id, intentReply.text);
     await updateChatState(chat.id, { lastBotMessageAt: new Date() });
+    publishLiveEvent({ type: 'workspace:update', chatId: chat.id, entity: 'chat', timestamp: new Date().toISOString() });
     return intentReply;
   }
 
   const fallbackReply = await handleFallback(chat.id, profile, chat.failedIntentCount ?? 0);
   await logOutboundMessage(chat.id, fallbackReply.text);
   await updateChatState(chat.id, { lastBotMessageAt: new Date() });
+  publishLiveEvent({ type: 'workspace:update', chatId: chat.id, entity: 'chat', timestamp: new Date().toISOString() });
   return fallbackReply;
 }

@@ -18,6 +18,7 @@ import eventsRoutes from './routes/events.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import integrationsRoutes from './routes/integrations.routes';
 import webhooksRoutes from './routes/webhooks.routes';
+import realtimeRoutes from './routes/realtime.routes';
 import healthRoutes from './routes/health.routes';
 import { errorHandler, notFound } from './middlewares/error-handler';
 
@@ -49,6 +50,7 @@ app.use('/api/events', eventsRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/integrations', integrationsRoutes);
 app.use('/api/webhooks', webhooksRoutes);
+app.use('/api/live', realtimeRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

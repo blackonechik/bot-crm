@@ -5,6 +5,7 @@ import { prisma } from '../db/prisma';
 import { requireAuth } from '../middlewares/auth';
 import { requirePermission } from '../middlewares/rbac';
 import { sendMaxMessage } from '../services/max-bot.service';
+import { publishLiveEvent } from '../services/realtime.service';
 import { sendTelegramMessage } from '../services/telegram-bot.service';
 import { Channel, ChatMode, ChatStatus, MessageDirection } from '../types/domain';
 
@@ -104,6 +105,12 @@ router.post('/:id/messages', requirePermission('messages.send'), async (req, res
       }
     }
 
+    await prisma.chat.updateMany({
+      where: { id: req.params.id, firstResponseAt: null },
+      data: { firstResponseAt: new Date() }
+    });
+
+    publishLiveEvent({ type: 'workspace:update', chatId: req.params.id, entity: 'chat', timestamp: new Date().toISOString() });
     res.status(201).json(message);
   } catch (e) {
     next(e);
@@ -123,6 +130,7 @@ router.post('/:id/internal-notes', requirePermission('chats.write'), async (req,
       }
     });
 
+    publishLiveEvent({ type: 'workspace:update', chatId: req.params.id, entity: 'chat', timestamp: new Date().toISOString() });
     res.status(201).json(note);
   } catch (e) {
     next(e);
@@ -162,6 +170,7 @@ router.patch('/:id/status', requirePermission('chats.write'), async (req, res, n
       }
     });
 
+    publishLiveEvent({ type: 'workspace:update', chatId: updated.id, entity: 'chat', timestamp: new Date().toISOString() });
     res.json(updated);
   } catch (e) {
     next(e);
@@ -178,6 +187,7 @@ router.patch('/:id/mode', requirePermission('chats.write'), async (req, res, nex
       data: { mode: mode as any }
     });
 
+    publishLiveEvent({ type: 'workspace:update', chatId: updated.id, entity: 'chat', timestamp: new Date().toISOString() });
     res.json(updated);
   } catch (e) {
     next(e);
@@ -214,6 +224,7 @@ router.patch('/:id/state', requirePermission('chats.write'), async (req, res, ne
       }
     });
 
+    publishLiveEvent({ type: 'workspace:update', chatId: updated.id, entity: 'chat', timestamp: new Date().toISOString() });
     res.json(updated);
   } catch (e) {
     next(e);
@@ -233,6 +244,7 @@ router.patch('/:id/assign', requirePermission('chats.write'), async (req, res, n
       }
     });
 
+    publishLiveEvent({ type: 'workspace:update', chatId: updated.id, entity: 'chat', timestamp: new Date().toISOString() });
     res.json(updated);
   } catch (e) {
     next(e);

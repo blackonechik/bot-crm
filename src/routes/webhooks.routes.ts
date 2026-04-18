@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../db/prisma';
+import { publishLiveEvent } from '../services/realtime.service';
 import { processInboundMessage } from '../services/message-router.service';
 import { sendMaxMessage } from '../services/max-bot.service';
 import { sendTelegramMessage } from '../services/telegram-bot.service';
@@ -35,6 +36,8 @@ router.post('/telegram', async (req, res, next) => {
     if (reply) {
       await sendTelegramMessage(String(sourceMessage.chat.id), reply.text, reply.buttons);
     }
+
+    publishLiveEvent({ type: 'workspace:update', chatId: String(sourceMessage.chat.id), entity: 'chat', timestamp: new Date().toISOString() });
 
     await prisma.webhookLog.create({
       data: {
@@ -85,6 +88,13 @@ router.post('/max', async (req, res, next) => {
     if (reply) {
       await sendMaxMessage(String(message?.recipient?.chat_id ?? message?.chat_id ?? payload?.chat_id ?? 'unknown'), reply.text, reply.buttons);
     }
+
+    publishLiveEvent({
+      type: 'workspace:update',
+      chatId: String(message?.recipient?.chat_id ?? message?.chat_id ?? payload?.chat_id ?? 'unknown'),
+      entity: 'chat',
+      timestamp: new Date().toISOString()
+    });
 
     await prisma.webhookLog.create({
       data: {

@@ -56,6 +56,38 @@ export async function processDueScheduledTasks(): Promise<void> {
         });
       }
 
+      if (task.type === 'sla_first_response_30m' && payload?.chatId && typeof payload.chatId === 'string') {
+        const chat = await prisma.chat.findUnique({
+          where: { id: payload.chatId },
+          select: { id: true, firstResponseAt: true, mode: true }
+        });
+
+        if (chat && !chat.firstResponseAt) {
+          await prisma.chat.update({
+            where: { id: chat.id },
+            data: {
+              mode: 'MANUAL',
+              status: ChatStatus.WAITING_MANAGER,
+              conversationState: 'human_handoff_waiting',
+              sourceTransition: 'sla_first_response_timeout',
+              priority: 'high',
+              pausedAt: new Date()
+            }
+          });
+
+          await prisma.notification.create({
+            data: {
+              title: 'SLA: первый ответ просрочен',
+              body: `Чат ${chat.id} требует первоочередного ответа`,
+              type: 'sla_breach',
+              payload: { chatId: chat.id }
+            }
+          });
+
+          await sendReminderMessage(chat.id, 'Извините за ожидание. Мы уже передали ваш запрос администратору.');
+        }
+      }
+
       if (task.type.startsWith('scenario_timeout') && payload?.chatId && typeof payload.chatId === 'string') {
         await prisma.chat.update({
           where: { id: payload.chatId },

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requireAuth } from '../middlewares/auth';
 import { requirePermission } from '../middlewares/rbac';
+import { getAvailableAppointmentSlots, isAppointmentSlotAvailable } from '../services/appointment-slots.service';
 import { AppointmentStatus, ChatStatus } from '../types/domain';
 
 const router = Router();
@@ -20,6 +21,32 @@ router.get('/', requirePermission('appointments.read'), async (_req, res, next) 
       orderBy: { scheduledAt: 'desc' }
     });
     res.json(items);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/availability', requirePermission('appointments.read'), async (req, res, next) => {
+  try {
+    const schema = z.object({
+      from: z.string().datetime().optional(),
+      days: z.coerce.number().int().min(1).max(30).optional(),
+      limit: z.coerce.number().int().min(1).max(50).optional(),
+      specialization: z.string().optional(),
+      doctorName: z.string().optional()
+    });
+
+    const query = schema.parse(req.query);
+    const slots = await getAvailableAppointmentSlots({
+      profile: await prisma.clinicProfile.findFirstOrThrow(),
+      from: query.from,
+      days: query.days,
+      limit: query.limit,
+      specialization: query.specialization,
+      doctorName: query.doctorName
+    });
+
+    res.json(slots);
   } catch (e) {
     next(e);
   }
@@ -45,6 +72,7 @@ router.post('/', requirePermission('appointments.write'), async (req, res, next)
     });
 
     const data = schema.parse(req.body);
+    const profile = await prisma.clinicProfile.findFirstOrThrow();
     let clientId = data.clientId;
     if (!clientId && (data.fullName || data.phone || data.email || data.username)) {
       const client = await prisma.client.create({
@@ -59,6 +87,30 @@ router.post('/', requirePermission('appointments.write'), async (req, res, next)
       clientId = client.id;
     }
 
+    const scheduledAt = new Date(data.scheduledAt);
+    const available = await isAppointmentSlotAvailable({
+      profile,
+      scheduledAt,
+      specialization: data.service,
+      doctorName: data.doctor
+    });
+
+    if (!available) {
+      const suggestedSlots = await getAvailableAppointmentSlots({
+        profile,
+        from: scheduledAt.toISOString(),
+        specialization: data.service,
+        doctorName: data.doctor,
+        limit: 6
+      });
+
+      res.status(409).json({
+        error: 'Selected slot is not available',
+        suggestedSlots
+      });
+      return;
+    }
+
     const appointment = await prisma.appointment.create({
       data: {
         clientId,
@@ -67,12 +119,11 @@ router.post('/', requirePermission('appointments.write'), async (req, res, next)
         assignedUserId: data.assignedUserId,
         service: data.service,
         doctor: data.doctor,
-        scheduledAt: new Date(data.scheduledAt),
+        scheduledAt,
         comment: data.comment
       }
     });
 
-    const scheduledAt = new Date(data.scheduledAt);
     await prisma.scheduledTask.createMany({
       data: [
         {
