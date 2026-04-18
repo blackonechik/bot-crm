@@ -100,7 +100,7 @@ export async function startMaxBot(): Promise<void> {
   });
 
   try {
-    bot.start();
+    await bot.start();
     console.log('MAX bot started (@maxhub/max-bot-api)');
   } catch (error) {
     console.warn('MAX bot failed to start, continuing without polling', error);
