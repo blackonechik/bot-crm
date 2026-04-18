@@ -4,7 +4,9 @@ import { z } from 'zod';
 import { prisma } from '../db/prisma';
 import { requireAuth } from '../middlewares/auth';
 import { requirePermission } from '../middlewares/rbac';
-import { ChatMode, ChatStatus, MessageDirection } from '../types/domain';
+import { sendMaxMessage } from '../services/max-bot.service';
+import { sendTelegramMessage } from '../services/telegram-bot.service';
+import { Channel, ChatMode, ChatStatus, MessageDirection } from '../types/domain';
 
 const router = Router();
 router.use(requireAuth);
@@ -65,6 +67,16 @@ router.post('/:id/messages', requirePermission('messages.send'), async (req, res
     const schema = z.object({ text: z.string().min(1) });
     const data = schema.parse(req.body);
 
+    const chat = await prisma.chat.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, channel: true, externalChatId: true }
+    });
+
+    if (!chat) {
+      res.status(404).json({ error: 'Chat not found' });
+      return;
+    }
+
     const message = await prisma.message.create({
       data: {
         chatId: req.params.id,
@@ -73,6 +85,24 @@ router.post('/:id/messages', requirePermission('messages.send'), async (req, res
         senderUserId: req.auth!.userId
       }
     });
+
+    if (chat.channel === Channel.TELEGRAM) {
+      const sent = await sendTelegramMessage(chat.externalChatId, data.text);
+      if (sent?.message_id !== undefined) {
+        await prisma.message.update({
+          where: { id: message.id },
+          data: { channelMessageId: String(sent.message_id) }
+        });
+      }
+    } else if (chat.channel === Channel.MAX) {
+      const sent = await sendMaxMessage(chat.externalChatId, data.text);
+      if (sent?.mid) {
+        await prisma.message.update({
+          where: { id: message.id },
+          data: { channelMessageId: sent.mid }
+        });
+      }
+    }
 
     res.status(201).json(message);
   } catch (e) {
