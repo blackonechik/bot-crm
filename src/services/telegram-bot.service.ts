@@ -4,6 +4,8 @@ import { Channel } from '../types/domain';
 import { processInboundMessage } from './message-router.service';
 import { telegramInlineKeyboard } from '../utils/inline-keyboard';
 
+const { HttpsProxyAgent } = require('https-proxy-agent');
+
 let telegramBot: Telegraf | null = null;
 
 export async function sendTelegramMessage(
@@ -36,7 +38,15 @@ export async function startTelegramBot(): Promise<void> {
     return;
   }
 
-  telegramBot = new Telegraf(env.tgBotToken);
+  const telegramOptions = env.telegramProxyUrl
+    ? {
+        telegram: {
+          agent: new HttpsProxyAgent(env.telegramProxyUrl)
+        }
+      }
+    : undefined;
+
+  telegramBot = new Telegraf(env.tgBotToken, telegramOptions);
 
   telegramBot.start(async (ctx) => {
     const reply = await processInboundMessage({

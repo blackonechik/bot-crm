@@ -20,5 +20,6 @@ export const env = {
   refreshTtl: process.env.REFRESH_TOKEN_TTL ?? '7d',
   maxBotToken: process.env.MAX_BOT_TOKEN,
   tgBotToken: process.env.TELEGRAM_BOT_TOKEN,
+  telegramProxyUrl: process.env.TELEGRAM_PROXY_URL ?? process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY,
   timezone: process.env.DEFAULT_TIMEZONE ?? 'Europe/Moscow'
 };
