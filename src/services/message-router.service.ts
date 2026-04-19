@@ -55,6 +55,14 @@ const CONTACT_WORDS = ['перезвон', 'контакт', 'телефон'];
 const MENU_WORDS = ['/start', '/menu', '/help', 'в меню', 'вернуться в меню', 'главное меню', 'меню'];
 const YES_WORDS = ['да', 'подтверд', 'верно', 'ок', 'согласен', 'согласна'];
 const NO_WORDS = ['нет', 'не нужно', 'отмена', 'не надо'];
+const DEFAULT_SERVICE_PRICES: Array<{ match: string[]; name: string; price: string }> = [
+  { match: ['прием терапевта', 'приём терапевта', 'терапевт'], name: 'Прием терапевта', price: 'от 1500 ₽' },
+  { match: ['прием кардиолога', 'приём кардиолога', 'кардиолог'], name: 'Прием кардиолога', price: 'от 2500 ₽' },
+  { match: ['стоматология', 'прием стоматолога', 'приём стоматолога', 'стоматолог'], name: 'Стоматология', price: 'от 3000 ₽' },
+  { match: ['анализы', 'анализ', 'лаборатория'], name: 'Анализы', price: 'от 500 ₽' },
+  { match: ['прием гинеколога', 'приём гинеколога', 'гинеколог'], name: 'Прием гинеколога', price: 'от 2000 ₽' },
+  { match: ['прием педиатра', 'приём педиатра', 'педиатр'], name: 'Прием педиатра', price: 'от 1800 ₽' }
+];
 
 function normalizeText(text: string): string {
   return text.trim().toLowerCase();
@@ -259,8 +267,25 @@ function findServiceAnswer(profile: ClinicProfileShape, text: string): { name: s
     return candidate && (normalized.includes(candidate) || candidate.includes(normalized));
   });
 
-  if (!found || !found.name || !found.price) return null;
-  return { name: found.name, price: found.price };
+  if (found?.name) {
+    const explicitPrice = typeof found.price === 'string' ? found.price.trim() : '';
+    if (explicitPrice) {
+      return { name: found.name, price: explicitPrice };
+    }
+
+    const fallback = DEFAULT_SERVICE_PRICES.find((item) =>
+      item.match.some((keyword) => normalized.includes(keyword) || normalizeText(found.name ?? '').includes(keyword))
+    );
+
+    return {
+      name: found.name,
+      price: fallback?.price ?? 'Точную стоимость администратор уточнит индивидуально'
+    };
+  }
+
+  const fallback = DEFAULT_SERVICE_PRICES.find((item) => item.match.some((keyword) => normalized.includes(keyword)));
+  if (!fallback) return null;
+  return { name: fallback.name, price: fallback.price };
 }
 
 function findDoctors(profile: ClinicProfileShape, specialization?: string): Array<Record<string, unknown>> {
@@ -633,9 +658,42 @@ async function handleFallback(chatId: string, profile: ClinicProfileShape, curre
 
 async function handlePriceFlow(chat: Awaited<ReturnType<typeof prisma.chat.findUnique>> & { id: string }, profile: ClinicProfileShape, text: string): Promise<OutboundReply> {
   const data = (chat.scenarioData ?? {}) as ScenarioData;
-  const service = findServiceAnswer(profile, text) ?? (data.service ? { name: String(data.service), price: 'от 0 ₽' } : null);
+  const normalized = normalizeText(text);
+  const service = findServiceAnswer(profile, text) ?? (data.service ? { name: String(data.service), price: 'Точную стоимость администратор уточнит индивидуально' } : null);
 
-  if (!service && includesAny(normalizeText(text), NO_WORDS)) {
+  if (chat.currentScenarioStep === 'offer_booking') {
+    if (includesAny(normalized, YES_WORDS) || includesAny(normalized, BOOKING_WORDS)) {
+      const nextSpecialization = typeof service?.name === 'string' ? service.name : typeof data.service === 'string' ? String(data.service) : null;
+
+      await updateChatState(chat.id, {
+        conversationState: ConversationState.APPOINTMENT_FLOW,
+        currentScenarioCode: 'appointment_flow',
+        currentScenarioStep: 'date',
+        scenarioData: nextSpecialization ? { ...data, specialization: nextSpecialization } : { ...data },
+        sourceTransition: 'price_to_booking',
+        failedIntentCount: 0
+      });
+
+      return {
+        chatId: chat.id,
+        text: 'Отлично, давайте подберем удобную дату для записи.',
+        buttons: ['Сегодня', 'Завтра', 'Выбрать другую дату', 'Связаться с администратором', 'В меню']
+      };
+    }
+
+    if (includesAny(normalized, NO_WORDS)) {
+      await updateChatState(chat.id, {
+        conversationState: ConversationState.MAIN_MENU,
+        currentScenarioCode: null,
+        currentScenarioStep: null,
+        scenarioData: null,
+        failedIntentCount: 0
+      });
+      return handleMainMenuTrigger(chat.id, profile);
+    }
+  }
+
+  if (!service && includesAny(normalized, NO_WORDS)) {
     await updateChatState(chat.id, {
       conversationState: ConversationState.MAIN_MENU,
       currentScenarioCode: null,
