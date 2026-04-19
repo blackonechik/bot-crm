@@ -1164,28 +1164,6 @@ async function routeByIntent(params: {
   const { chat, profile, text } = params;
   const normalized = normalizeText(text);
 
-  if (!isWorkingNow(profile) && !includesAny(normalized, MANAGER_WORDS) && !includesAny(normalized, URGENT_WORDS)) {
-    await updateChatState(chat.id, {
-      conversationState: ConversationState.MAIN_MENU,
-      currentScenarioCode: null,
-      currentScenarioStep: null,
-      scenarioData: null,
-      sourceTransition: 'after_hours',
-      failedIntentCount: 0
-    });
-
-    return {
-      chatId: chat.id,
-      text:
-        `${profile.afterHoursText ?? 'Вы обратились вне рабочего времени клиники.'}\n` +
-        `\nПока вы можете:\n` +
-        `- записаться на прием\n` +
-        `- оставить номер телефона\n` +
-        `- узнать основную информацию о клинике`,
-      buttons: ['Записаться на прием', 'Оставить номер телефона', 'График и адрес', 'В меню']
-    };
-  }
-
   if (includesAny(normalized, URGENT_WORDS)) {
     return handleUrgent(chat.id, profile);
   }
@@ -1265,6 +1243,28 @@ async function routeByIntent(params: {
 
   const faqReply = await handleFaq(text, chat.id, profile);
   if (faqReply) return faqReply;
+
+  if (!isWorkingNow(profile) && !includesAny(normalized, MANAGER_WORDS) && !includesAny(normalized, URGENT_WORDS)) {
+    await updateChatState(chat.id, {
+      conversationState: ConversationState.MAIN_MENU,
+      currentScenarioCode: null,
+      currentScenarioStep: null,
+      scenarioData: null,
+      sourceTransition: 'after_hours',
+      failedIntentCount: 0
+    });
+
+    return {
+      chatId: chat.id,
+      text:
+        `${profile.afterHoursText ?? 'Вы обратились вне рабочего времени клиники.'}\n` +
+        `\nПока вы можете:\n` +
+        `- записаться на прием\n` +
+        `- оставить номер телефона\n` +
+        `- узнать основную информацию о клинике`,
+      buttons: ['Записаться на прием', 'Оставить номер телефона', 'График и адрес', 'В меню']
+    };
+  }
 
   return null;
 }
