@@ -27,6 +27,27 @@ import { errorHandler, notFound } from './middlewares/error-handler';
 export const app = express();
 
 app.use(helmet());
+function isAllowedOrigin(origin: string): boolean {
+  if (env.corsOrigins.includes(origin)) {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(origin);
+    if (parsed.hostname === 'localhost' || parsed.hostname.endsWith('.localhost')) {
+      return true;
+    }
+
+    if (parsed.hostname === 'blackone.pro' || parsed.hostname.endsWith('.blackone.pro')) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
 const corsOptions: CorsOptions = {
   origin(origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) {
     if (!origin) {
@@ -34,7 +55,7 @@ const corsOptions: CorsOptions = {
       return;
     }
 
-    if (env.corsOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       callback(null, true);
       return;
     }
