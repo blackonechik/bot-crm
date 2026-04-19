@@ -21,5 +21,9 @@ export const env = {
   maxBotToken: process.env.MAX_BOT_TOKEN,
   tgBotToken: process.env.TELEGRAM_BOT_TOKEN,
   telegramProxyUrl: process.env.TELEGRAM_PROXY_URL ?? process.env.HTTPS_PROXY ?? process.env.HTTP_PROXY,
+  corsOrigins: (process.env.CORS_ORIGINS ?? process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
   timezone: process.env.DEFAULT_TIMEZONE ?? 'Europe/Moscow'
 };

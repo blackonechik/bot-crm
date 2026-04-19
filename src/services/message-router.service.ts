@@ -52,6 +52,7 @@ const PRICE_WORDS = ['стоим', 'цен', 'прайс'];
 const DOCTOR_WORDS = ['врач', 'специалист', 'доктор'];
 const CLINIC_INFO_WORDS = ['график', 'адрес', 'телефон', 'сайт', 'контак'];
 const CONTACT_WORDS = ['перезвон', 'контакт', 'телефон'];
+const MENU_WORDS = ['/start', '/menu', '/help', 'в меню', 'вернуться в меню', 'главное меню', 'меню'];
 const YES_WORDS = ['да', 'подтверд', 'верно', 'ок', 'согласен', 'согласна'];
 const NO_WORDS = ['нет', 'не нужно', 'отмена', 'не надо'];
 
@@ -61,6 +62,50 @@ function normalizeText(text: string): string {
 
 function includesAny(text: string, words: string[]): boolean {
   return words.some((word) => text.includes(word));
+}
+
+function isMenuTrigger(text: string): boolean {
+  return includesAny(text, MENU_WORDS);
+}
+
+function isLikelyName(text: string): boolean {
+  const normalized = text.trim().replace(/\s+/g, ' ');
+  if (normalized.length < 2) return false;
+  if (!/\p{L}/u.test(normalized)) return false;
+  return /^[\p{L}\p{M}\s.'-]+$/u.test(normalized) && !/\d/.test(normalized);
+}
+
+function formatWorkingHours(workingHours: unknown): string {
+  if (!workingHours) return 'не указан';
+  if (typeof workingHours === 'string') return workingHours;
+  if (Array.isArray(workingHours)) return workingHours.map((item) => String(item)).join(', ');
+  if (typeof workingHours !== 'object') return String(workingHours);
+
+  const schedule = workingHours as Record<string, unknown>;
+  const dayNames: Record<string, string> = {
+    mon: 'Пн',
+    tue: 'Вт',
+    wed: 'Ср',
+    thu: 'Чт',
+    fri: 'Пт',
+    sat: 'Сб',
+    sun: 'Вс'
+  };
+
+  const lines = Object.entries(schedule)
+    .map(([day, value]) => {
+      const label = dayNames[day.toLowerCase()] ?? day;
+      if (value === null || value === undefined || value === '') {
+        return null;
+      }
+      if (typeof value === 'string') {
+        return `${label}: ${value}`;
+      }
+      return `${label}: ${JSON.stringify(value)}`;
+    })
+    .filter((line): line is string => Boolean(line));
+
+  return lines.length > 0 ? lines.join('\n') : 'не указан';
 }
 
 function extractAttachments(raw: unknown): Array<{ fileName?: string; mimeType?: string; url?: string; size?: number; metadata?: unknown }> {
@@ -135,7 +180,7 @@ function getClinicInfo(profile: ClinicProfileShape): string {
   return [
     `Вот информация о клинике:`,
     `Адрес: ${profile.address ?? 'не указан'}`,
-    `График работы: ${(profile.workingHours as string | undefined) ?? 'не указан'}`,
+    `График работы: ${formatWorkingHours(profile.workingHours)}`,
     `Телефон: ${profile.phone ?? 'не указан'}`,
     `Сайт: ${profile.site ?? 'не указан'}`
   ].join('\n');
@@ -187,6 +232,23 @@ function normalizePhone(text: string): string | null {
     return `+${digits}`;
   }
   return null;
+}
+
+async function shouldIgnoreDuplicateInboundMessage(chatId: string, text: string): Promise<boolean> {
+  const lastInbound = await prisma.message.findFirst({
+    where: {
+      chatId,
+      direction: MessageDirection.INBOUND
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { text: true, createdAt: true }
+  });
+
+  if (!lastInbound) return false;
+
+  const isSameText = normalizeText(lastInbound.text) === normalizeText(text);
+  const isTooFast = Date.now() - lastInbound.createdAt.getTime() < 1500;
+  return isSameText && isTooFast;
 }
 
 function findServiceAnswer(profile: ClinicProfileShape, text: string): { name: string; price: string } | null {
@@ -890,7 +952,7 @@ async function handleAppointmentFlow(
   }
 
   if (state === 'name') {
-    if (!text.trim() || text.trim().length < 2 || /^\W+$/.test(text.trim())) {
+    if (!isLikelyName(text)) {
       return {
         chatId: chat.id,
         text: 'Пожалуйста, напишите ваше имя, чтобы мы могли оформить запись.',
@@ -1164,6 +1226,19 @@ async function routeByIntent(params: {
   const { chat, profile, text } = params;
   const normalized = normalizeText(text);
 
+  if (isMenuTrigger(normalized)) {
+    await updateChatState(chat.id, {
+      conversationState: ConversationState.MAIN_MENU,
+      currentScenarioCode: null,
+      currentScenarioStep: null,
+      scenarioData: null,
+      failedIntentCount: 0,
+      mode: ChatMode.AUTO,
+      status: ChatStatus.BOT_IN_PROGRESS
+    });
+    return handleMainMenuTrigger(chat.id, profile);
+  }
+
   if (includesAny(normalized, URGENT_WORDS)) {
     return handleUrgent(chat.id, profile);
   }
@@ -1314,9 +1389,13 @@ export async function processInboundMessage(payload: InboundPayload): Promise<Ou
   const text = payload.text.trim();
   const normalized = normalizeText(text);
 
+  if (await shouldIgnoreDuplicateInboundMessage(chat.id, text)) {
+    return null;
+  }
+
   await storeInboundMessage(chat.id, client.id, text, payload.raw);
 
-  if (includesAny(normalized, ['/start', '/menu', '/help']) || normalized === 'в меню' || chat.conversationState === ConversationState.NEW) {
+  if (isMenuTrigger(normalized) || chat.conversationState === ConversationState.NEW) {
     const menuReply = await handleMainMenuTrigger(chat.id, profile);
     await logOutboundMessage(chat.id, menuReply.text);
     await updateChatState(chat.id, { lastBotMessageAt: new Date() });

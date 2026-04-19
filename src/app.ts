@@ -1,7 +1,9 @@
 import cors from 'cors';
+import type { CorsOptions } from 'cors';
 import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import { env } from './config/env';
 import authRoutes from './routes/auth.routes';
 import usersRoutes from './routes/users.routes';
 import rolesRoutes from './routes/roles.routes';
@@ -25,7 +27,27 @@ import { errorHandler, notFound } from './middlewares/error-handler';
 export const app = express();
 
 app.use(helmet());
-app.use(cors());
+const corsOptions: CorsOptions = {
+  origin(origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    if (env.corsOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
 
